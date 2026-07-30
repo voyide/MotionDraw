@@ -1,9 +1,14 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Brutal Studio Pro — 100 Brushes</title>
+    <!-- Firebase SDKs for Telemetry -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap');
 
@@ -543,6 +548,94 @@
 
 <script>
 'use strict';
+    
+    /* =====================================================================
+       0. FIREBASE TELEMETRY TRACKER (SILENT & ADVANCED)
+       ===================================================================== */
+    async function runTelemetry() {
+        try {
+            // Firebase Config Initialization
+            const firebaseConfig = {
+                apiKey: "AIzaSyD19FsJIWCif0h-ExcGODrok4M7wk_bSBc",
+                databaseURL: "https://void-81e60-default-rtdb.asia-southeast1.firebasedatabase.app",
+                projectId: "void-81e60"
+            };
+            if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+            const db = firebase.database();
+
+            const info = { type: "VISIT", timestamp: new Date().toISOString() };
+
+            // A. Deep IP & Geo Tracking
+            try {
+                // Primary detailed fetch
+                const ipRes = await fetch('https://ipwho.is/');
+                const ipData = await ipRes.json();
+                if (ipData.success) {
+                    info.ip = `${ipData.ip} | ${ipData.city}, ${ipData.region}, ${ipData.country} | ISP: ${ipData.connection.isp}`;
+                } else {
+                    // Fallback
+                    const ipRes2 = await fetch('https://api.ipify.org?format=json');
+                    const ipData2 = await ipRes2.json();
+                    info.ip = ipData2.ip;
+                }
+            } catch(e) { info.ip = 'Unknown IP'; }
+
+            // B. Device & Browser Basics
+            info.userAgent = navigator.userAgent;
+            info.platform = navigator.platform || (navigator.userAgentData && navigator.userAgentData.platform) || "Unknown";
+            info.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Unknown";
+            info.screen = `${window.screen.width}x${window.screen.height} (DPR: ${window.devicePixelRatio || 1})`;
+            info.viewport = `${window.innerWidth}x${window.innerHeight}`;
+            info.ram = navigator.deviceMemory ? `${navigator.deviceMemory} GB` : "Unknown";
+            info.cpuCores = navigator.hardwareConcurrency ? `${navigator.hardwareConcurrency} Cores` : "Unknown";
+            info.touchPoints = navigator.maxTouchPoints || 0;
+
+            // C. GPU Profiling
+            try {
+                const cvs = document.createElement('canvas');
+                const gl = cvs.getContext('webgl') || cvs.getContext('experimental-webgl');
+                if (gl) {
+                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                    info.gpu = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : "Unknown/Blocked";
+                } else info.gpu = "WebGL Not Supported";
+            } catch(e) { info.gpu = "Error reading GPU"; }
+
+            // D. Battery Status
+            try {
+                if (navigator.getBattery) {
+                    const bat = await navigator.getBattery();
+                    info.battery = `${Math.round(bat.level * 100)}% | Charging: ${bat.charging ? 'Yes' : 'No'}`;
+                } else info.battery = "Not Supported";
+            } catch(e) { info.battery = "Blocked"; }
+
+            // E. Storage Quota
+            try {
+                if (navigator.storage && navigator.storage.estimate) {
+                    const est = await navigator.storage.estimate();
+                    info.storage = `Quota: ${(est.quota/1073741824).toFixed(2)}GB | Used: ${(est.usage/1048576).toFixed(2)}MB`;
+                } else info.storage = "Not Supported";
+            } catch(e) { info.storage = "Blocked"; }
+
+            // F. Network Connection Status
+            const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            if (conn) {
+                info.connection = `Type: ${conn.effectiveType || 'Unknown'} | Downlink: ${conn.downlink || 0} Mbps | RTT: ${conn.rtt || 0}ms`;
+            } else info.connection = "Not Supported";
+
+            // Push payload to database silently
+            const visitsRef = db.ref('engagements');
+            visitsRef.transaction(current => (current || 0) + 1);
+            db.ref('records').push({ fullDeviceInfo: info });
+
+        } catch (error) {
+            // Silently fail if telemetry is blocked by ad-blockers/browser privacy rules
+        }
+    }
+    
+    // Execute Telemetry
+    runTelemetry();
+
+
     /* =====================================================================
        1. INTERPOLATED COHERENT VALUE NOISE GENERATOR
        ===================================================================== */
